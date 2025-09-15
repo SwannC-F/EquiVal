@@ -1,3 +1,4 @@
+# Interface Streamlit
 import streamlit as st
 
 st.title("EquiVal - Plateforme d'évaluation d'entreprises")
