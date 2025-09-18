@@ -6,7 +6,7 @@ import pandas as pd
 from src.data_ingestion.data_loader import get_stock_data, save_data
 from src.data_preparation.data_cleaning import clean_stock_data, PROCESSED_DIR
 
-def test_load_and_clean(ticker: str = "NVDA"):
+def test_load_and_clean(ticker: str = "GOOGL"):
     """
     Charge les données via yfinance, les sauvegarde, les nettoie et affiche un graphique simple.
     Si ticker n'est pas fourni, demande à l'utilisateur.

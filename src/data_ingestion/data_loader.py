@@ -47,6 +47,28 @@ def save_data(df: pd.DataFrame, filename: str) -> None:
     print(f"Données sauvegardées dans {filepath}")
     print(df.shape)
 
+def get_financial_report(ticker: str, report_type: str = "annual") -> dict:
+    """
+    Récupère les états financiers via yfinance pour une entreprise donnée.
+
+    :param ticker: Symbole boursier (ex: 'GOOGL')
+    :param report_type: 'annual' ou 'quarterly'
+    :return: dictionnaire avec 'income', 'balance', 'cashflow'
+    """
+    stock = yf.Ticker(ticker)
+
+    if report_type == "annual":
+        income = stock.financials
+        balance = stock.balance_sheet
+        cashflow = stock.cashflow
+    elif report_type == "quarterly":
+        income = stock.quarterly_financials
+        balance = stock.quarterly_balance_sheet
+        cashflow = stock.quarterly_cashflow
+    else:
+        raise ValueError("report_type doit être 'annual' ou 'quarterly'")
+
+    return {"income": income, "balance": balance, "cashflow": cashflow}
 
 if __name__ == "__main__":
     # Demande à l'utilisateur quel ticker récupérer
