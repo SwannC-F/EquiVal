@@ -1,46 +1,69 @@
-from src.financial_analysis.financials_fmp import get_financials,calculate_lbo_ready_fcf,project_financials,calculate_leverage_ratios, calculate_profitability_ratios,debug_yahooquery_structure
+from src.financial_analysis.financials_fmp import (
+    get_financials,
+    calculate_lbo_ready_fcf,
+    project_financials,
+    calculate_leverage_ratios,
+    calculate_profitability_ratios,
+    define_lbo_structure,
+    simulate_lbo_cashflows,
+    calculate_lbo_return,
+    lbo_from_ticker_complete,
+lbo_to_excel
+)
 
-##ticker = "AAPL"
-##df_fin = get_financials(ticker)
-##df_ratios = calculate_ratios(df_fin)
 
-# Affiche les 5 derniers résultats
-##print(df_ratios[["date", "revenue", "ebitda", "operatingIncome", "netIncome", "EBITDA Margin", "EBIT Margin", "Net Income Margin"]].head())
-#*
+def test_get_financials_and_lbo():
+    ticker = "GOOGL"
 
+    # Étape 1 : Récupération des données financières brutes
+    df_fin = get_financials(ticker)
+    assert not df_fin.empty, "Le DataFrame brut des données financières est vide"
 
+    # Étape 2 : Calcul des ratios
+    df_ratios = calculate_profitability_ratios(df_fin)
+    df_leverage_ratios = calculate_leverage_ratios(df_fin)
 
-def test_get_financials():
-        ticker = "GOOGL"
-        df_fin = get_financials(ticker)
+    print("\n--- Ratios de Profitabilité ---")
+    print(df_ratios[["date", "totalrevenue", "ebitda_margin", "ebit_margin", "net_income_margin"]].head())
 
-        # Calcul des ratios
-        df_ratios = calculate_profitability_ratios(df_fin)
-        df_leverage_ratios = calculate_leverage_ratios(df_fin)
+    # Étape 3 : Projection à 5 ans
+    df_proj = project_financials(df_ratios, years=5, revenue_growth=0.06)
+    print("\n--- Projection Financière ---")
+    print(df_proj.head())
 
-        # Affichage des premiers résultats
-        print(df_ratios[["date", "totalrevenue", "ebitda_margin", "ebit_margin", "net_income_margin"]].head())
-        print(df_leverage_ratios[["date", "debt_to_equity", "debt_to_ebitda", "interest_coverage_ratio",
-                                  "current_ratio", "quick_ratio"]].head())
+    # Étape 4 : Calcul du FCF pour LBO
+    df_lbo_ready = calculate_lbo_ready_fcf(df_proj, df_leverage_ratios)
+    print("\n--- FCF LBO-ready ---")
+    print(df_lbo_ready.head())
 
-        # Vérifier que les DataFrames ne sont pas vides
-        assert not df_ratios.empty, "Le DataFrame des ratios de profitabilité est vide"
-        assert not df_leverage_ratios.empty, "Le DataFrame des ratios de levier est vide"
+    # Étape 5 : Structure du LBO
+    purchase_price = 500_000_000_000  # 500B$
+    structure = define_lbo_structure(purchase_price, equity_ratio=0.3)
+    print("\n--- Structure LBO ---")
+    print(structure)
 
-        # Test de projection à 5 ans
-        df_proj = project_financials(df_ratios, years=5, revenue_growth=0.06)
-        print(df_proj.head())
-        required_proj_cols = ["year", "revenue", "ebitda", "ebit", "capex", "fcf"]
-        assert all(col in df_proj.columns for col in required_proj_cols), \
-            f"Colonnes manquantes dans le DataFrame de projection : {required_proj_cols}"
+    # Étape 6 : Simulation LBO
+    df_simulation = simulate_lbo_cashflows(
+        df_lbo_ready,
+        initial_debt=structure["debt"],
+        interest_rate=0.08,
+        repayment_rate=0.2
+    )
+    print("\n--- Simulation LBO ---")
+    print(df_simulation.head())
 
-        # Test du calcul du FCF pour LBO
-        df_lbo_ready = calculate_lbo_ready_fcf(df_proj,df_leverage_ratios)
-        print(df_lbo_ready.head())
+    # Étape 7 : Calcul final avec multiple EV/EBITDA
+    lbo_results = calculate_lbo_return(df_simulation, structure["equity"], exit_multiple=10.0)
+    print("\n--- Résultats LBO avec multiple ---")
+    print(lbo_results)
 
-        required_lbo_cols = ["year", "ebitda", "capex", "taxes", "working_capital_change", "fcf"]
-        assert all(col in df_lbo_ready.columns for col in required_lbo_cols), \
-            f"Colonnes manquantes dans le FCF LBO-ready : {required_lbo_cols}"
+    # Vérifications
+    assert lbo_results["final_equity"] > 0, "L'équity final doit être positif"
+    assert lbo_results["multiple"] > 1, "Le multiple doit être > 1"
+    assert 0 < lbo_results["irr"] < 2, "L'IRR doit être raisonnable"
 
-        assert df_lbo_ready["fcf"].iloc[-1] > 0, "Le dernier FCF doit être positif"
-
+def test_calculate_lbo_return(ticker="GOOGL" , pp =200000000):
+    df = lbo_from_ticker_complete(ticker, 200000000)
+    print(df)
+    lbo_to_excel(ticker,pp)
+    return df
