@@ -469,3 +469,4 @@ def lbo_to_excel(ticker: str, purchase_price: float,
     print(f"Analyse LBO exportée avec succès dans : {filename}")
     return filename
 
+
