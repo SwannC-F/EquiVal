@@ -12,68 +12,81 @@ def _ensure_dir(path: Path):
 # ---------------------------
 # 1) WACC / Cost of Equity
 # ---------------------------
-def compute_wacc(ticker: str,
-                 equity_value: Optional[float] = None,
-                 debt_value: Optional[float] = None,
-                 tax_rate: Optional[float] = None,
-                 risk_free_rate: Optional[float] = None,
-                 market_premium: Optional[float] = None,
-                 beta_override: Optional[float] = None) -> Dict[str, float]:
+def compute_wacc(
+    ticker: str,
+    equity_value: Optional[float] = None,
+    debt_value: Optional[float] = None,
+    tax_rate: Optional[float] = None,
+    risk_free_rate: Optional[float] = None,
+    market_premium: Optional[float] = None,
+    beta_override: Optional[float] = None,
+    interest_expense: Optional[float] = None,
+    target_debt_ratio: Optional[float] = None  # si on veut réendetter le bêta
+) -> Dict[str, float]:
     """
-    Calcule le WACC avec récupération possible du beta via yahooquery.
-    Toutes les valeurs optionnelles sont estimations si non fournies.
-    Retourne dict avec keys: cost_of_equity, cost_of_debt, wacc, beta, assumptions...
+    Calcule le WACC avec récupération possible du beta via YahooQuery.
+    Gère les hypothèses par défaut et indique ce qui est estimé.
+    Retourne un dict avec composantes + assumptions.
     """
-    # === Hypothèses par défaut (TOUJOURS MARQUÉES # ESTIMATION) ===
-    if risk_free_rate is None:
-        risk_free_rate = 0.035  # 3.5% US 10y - ESTIMATION
-    if market_premium is None:
-        market_premium = 0.06   # 6% prime de marché - ESTIMATION
-    if tax_rate is None:
-        tax_rate = 0.21         # 21% taux d'imposition - ESTIMATION
 
-    # Récupérer beta via yahooquery si possible
+    # === Hypothèses par défaut centralisées ===
+    assumptions = {}
+    if risk_free_rate is None:
+        risk_free_rate = 0.035
+        assumptions["risk_free_rate"] = "estimé"
+    if market_premium is None:
+        market_premium = 0.06
+        assumptions["market_premium"] = "estimé"
+    if tax_rate is None:
+        tax_rate = 0.21
+        assumptions["tax_rate"] = "estimé"
+
+    # === Beta ===
     beta = None
     try:
         t = Ticker(ticker)
         ks = t.key_stats
         if isinstance(ks, dict):
-            # certains retours sont {ticker: {...}}
             k = list(ks.keys())[0]
             beta = ks[k].get("beta")
-        elif isinstance(ks, pd.DataFrame):
-            # DataFrame case
-            if "beta" in ks.columns:
-                beta = ks["beta"].iloc[0]
+        elif isinstance(ks, pd.DataFrame) and "beta" in ks.columns:
+            beta = ks["beta"].iloc[0]
     except Exception:
         beta = None
 
+    if beta_override is not None:
+        beta = beta_override
+        assumptions["beta"] = "override"
     if beta is None:
-        beta = beta_override if beta_override is not None else 1.0  # ESTIMATION fallback
+        beta = 1.0
+        assumptions["beta"] = "estimé"
 
+    # === Cost of equity (CAPM) ===
     cost_of_equity = risk_free_rate + beta * market_premium
 
-    # Cost of debt: si dettes fournies, calcule moyenne, sinon estimation 5%
-    if debt_value is None:
-        cost_of_debt = 0.05  # 5% - ESTIMATION
+    # === Cost of debt ===
+    if interest_expense is not None and debt_value and debt_value > 0:
+        cost_of_debt = interest_expense / debt_value
+        assumptions["cost_of_debt"] = "calculé sur intérêts/dette"
     else:
-        cost_of_debt = 0.05  # on pourrait raffiner si on a des interest expenses historiques
+        cost_of_debt = 0.05
+        assumptions["cost_of_debt"] = "estimé"
 
-    # Structure du capital
+    # === Structure du capital ===
     if equity_value is None and debt_value is None:
-        # On assume 40% equity / 60% debt (ESTIMATION) pour le calcul du ratio
-        equity_weight = 0.4
-        debt_weight = 0.6
+        equity_weight, debt_weight = 0.4, 0.6
+        assumptions["capital_structure"] = "estimée (40/60)"
     else:
-        # si one of them est None -> on estime
-        if equity_value is None:
-            equity_value = 1.0  # évite division par zéro; poids basé sur debt_value+1
-        if debt_value is None:
-            debt_value = 0.0
-        total = equity_value + debt_value
+        equity_value = 1.0 if equity_value is None else equity_value
+        debt_value = 0.0 if debt_value is None else debt_value
+        total = max(equity_value + debt_value, 1e-9)
         equity_weight = equity_value / total
         debt_weight = debt_value / total
 
+    if equity_weight < 0 or debt_weight < 0:
+        warnings.warn("⚠️ Poids négatif dans la structure du capital, vérifie tes inputs.")
+
+    # === WACC final ===
     wacc = cost_of_equity * equity_weight + cost_of_debt * (1 - tax_rate) * debt_weight
 
     return {
@@ -85,7 +98,8 @@ def compute_wacc(ticker: str,
         "tax_rate": tax_rate,
         "equity_weight": equity_weight,
         "debt_weight": debt_weight,
-        "wacc": wacc
+        "wacc": wacc,
+        "assumptions": assumptions
     }
 
 # ---------------------------
